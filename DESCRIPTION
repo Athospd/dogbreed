@@ -28,3 +28,5 @@ Suggests:
     rmarkdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+URL: https://github.com/Athospd/dogbreed
+BugReports: https://github.com/Athospd/dogbreed/issues
