@@ -1,0 +1,157 @@
+---
+title: "Dog Breed Identification"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Dog Breed Identification}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(torch)
+library(torchvision)
+library(dogbreed)
+
+device <- if(cuda_is_available()) "cuda" else "cpu"
+```
+
+## Dataset
+
+```{r}
+transform_train <- function(img) {
+  # image to tensor
+  img %>% torchvision::transform_to_tensor() %>%
+    # move to the GPU (if available)
+    (function(x) x$to(device = device)) %>%
+    # data augmentation
+    torchvision::transform_color_jitter() %>%
+    torchvision::transform_random_horizontal_flip() %>%
+    torchvision::transform_resize(c(224, 224)) %>%
+    # normalize according to what is expected by resnet
+    torchvision::transform_normalize(
+      mean = c(0.485, 0.456, 0.406), 
+      std = c(0.229, 0.224, 0.225)
+    )
+}
+
+transform_submission <- function(img) {
+  img %>%
+    torchvision::transform_to_tensor() %>%
+    (function(x) x$to(device = device)) %>%
+    torchvision::transform_resize(c(256, 256)) %>%
+    torchvision::transform_center_crop(c(224, 224))  %>%
+    torchvision::transform_normalize(
+      mean = c(0.485, 0.456, 0.406), 
+      std = c(0.229, 0.224, 0.225)
+    )
+}
+
+train <- dog_breed_dataset(
+  root = "/media/athos/DATA/OneDrive/Documents/datasets/", 
+  download = TRUE,
+  split = "train", 
+  loader = magick_loader, 
+  transform = transform_train
+)
+
+submission <- dog_breed_dataset(
+  root = "/media/athos/DATA/OneDrive/Documents/datasets/", 
+  download = TRUE,
+  split = "submission", 
+  loader = base_loader, 
+  transform = transform_submission
+)
+```
+
+```{r}
+train_dl <- dataloader(
+  dataset = train, 
+  batch_size = 32, 
+  shuffle = FALSE,
+  num_workers = 0,
+  worker_globals = c("device")
+)
+
+submission_dl <- dataloader(
+  dataset = submission, 
+  batch_size = 32, 
+  shuffle = FALSE,
+  num_workers = 4,
+  worker_globals = c("device")
+)
+```
+
+## Model
+
+```{r}
+nn_dog <- nn_module(
+  "DogNN",
+  initialize = function(n_classes = 120) {
+    resnet18 <- torchvision::model_resnet18(pretrained = TRUE)
+    resnet18$parameters %>% purrr::walk(function(param) param$requires_grad_(FALSE))
+    
+    num_features <- resnet18$fc$in_features
+    resnet18$fc <- torch::nn_linear(in_features = num_features, out_features = n_classes)
+    self$resnet18 <- resnet18
+  },
+  forward = function(x) {
+    x %>%
+      self$resnet18()
+  }
+)
+
+model <- nn_dog()$to(device = device)
+print(model)
+```
+
+## Training
+
+```{r}
+set_progress_bar <- function(total) {
+  progress::progress_bar$new(
+    total = total, clear = FALSE, width = 70,
+    format = ":current/:total [:bar] - :elapsed - loss: :loss"
+  )
+}
+
+n_epochs <- 10
+loss_function <- nn_cross_entropy_loss()
+optimizer <- optim_sgd(model$parameters, lr = 0.1, momentum = 0.9)
+scheduler <- lr_one_cycle(optimizer, max_lr = 0.05, epochs = n_epochs, steps_per_epoch = train_dl$.length())
+```
+
+```{r}
+for(epoch in 1:n_epochs) {
+  # progress bar for feedback
+  pb <- set_progress_bar(length(train_dl))
+  pb$message(glue::glue("Epoch {epoch}/{n_epochs}"))
+  
+  model$train()
+  losses <- c()
+  
+  coro::loop(for(b in train_dl) {
+    
+    optimizer$zero_grad()
+    output <- model(b[[1]]$to(device = device))
+    target <- b[[2]]$to(device = device)
+    loss <- loss_function(output, target)
+    loss$backward()
+    optimizer$step()
+    scheduler$step()
+    
+    losses <- c(losses, loss$item())
+    pb$tick(tokens = list(loss = round(mean(losses), 4)))
+  })
+  
+  model$eval()
+}
+```
+
+
