@@ -21,7 +21,8 @@ Imports:
     readr,
     torchvision,
     purrr,
-    progress
+    progress,
+    zeallot
 Suggests: 
     testthat (>= 3.0.0),
     knitr,
