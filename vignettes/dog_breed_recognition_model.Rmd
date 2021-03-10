@@ -25,12 +25,13 @@ library(torchvision)
 library(zeallot)
 
 # config
-IMG_TRAIN_FOLDER <- "/media/athos/DATA/OneDrive/Documents/datasets/dogs/train/"
-IMG_TEST_FOLDER <- "/media/athos/DATA/OneDrive/Documents/datasets/dogs/recognition/test/"
-DEVICE <- if(cuda_is_available()) "cuda" else "cpu"
-NUM_WORKERS <- 2
+IMG_TRAIN_FOLDER <- "~/datasets/dogs/train/"
+IMG_TEST_FOLDER <- "~/datasets/dogs/recognition/test/"
+NUM_WORKERS <- 16
 BATCH_SIZE <- 32
-NUM_EPOCHS <- 10
+NUM_EPOCHS <- 20
+DEVICE <- torch::torch_device(if(cuda_is_available()) "cuda" else "cpu")
+DEVICE
 ```
 
 ## Data prep/data augmentation
@@ -40,8 +41,6 @@ train_transform <- function(img) {
   img <- img %>%
     # first convert image to tensor
     torchvision::transform_to_tensor() %>%
-    # then move to the GPU (if available)
-    (function(x) x$to(device = DEVICE)) %>%
     # data augmentation
     torchvision::transform_random_affine(15, shear = c(-10, 10)) %>%
     # data augmentation
@@ -52,9 +51,9 @@ train_transform <- function(img) {
     torchvision::transform_random_horizontal_flip() %>%
     # normalize according to what is expected by resnet
     torchvision::transform_normalize(
-      mean = c(0.485, 0.456, 0.406), 
+      mean = c(0.485, 0.456, 0.406),
       std = c(0.229, 0.224, 0.225)
-    )
+    ) 
   img[..,1:224,1:224]
 }
 
@@ -76,7 +75,7 @@ test_transform <- function(img) {
 ```{r}
 train <- image_folder_dataset(IMG_TRAIN_FOLDER, train_transform, loader = magick_loader)
 test <- image_folder_dataset(IMG_TRAIN_FOLDER, test_transform, loader = magick_loader)
-
+set.seed(42)
 train_idx <- sample.int(length(train), 14000)
 train <- torch::dataset_subset(train, train_idx)
 test <- torch::dataset_subset(test, setdiff(1:length(train), train_idx))
@@ -111,7 +110,7 @@ print(model)
 ## Training loop
 
 ```{r}
-optimizer <- optim_sgd(model$parameters, lr = 0.05, momentum = 0.9)
+optimizer <- optim_sgd(model$parameters, lr = 0.05, momentum = 0.98)
 scheduler <- lr_one_cycle(
   optimizer, 
   max_lr = 0.05, 
@@ -147,6 +146,11 @@ for(epoch in 1:num_epochs) {
   model$eval()
 }
 ```
+
+```{r}
+torch_save(model, "model")
+```
+
 ## Evalutaion
 
 ```{r}
