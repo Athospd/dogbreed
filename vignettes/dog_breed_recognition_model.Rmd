@@ -43,6 +43,8 @@ train_transform <- function(img) {
     # then move to the GPU (if available)
     (function(x) x$to(device = DEVICE)) %>%
     # data augmentation
+    torchvision::transform_random_affine(15, shear = c(-10, 10)) %>%
+    # data augmentation
     torchvision::transform_random_resized_crop(size = c(224, 224)) %>%
     # data augmentation
     torchvision::transform_color_jitter() %>%
@@ -57,7 +59,15 @@ train_transform <- function(img) {
 }
 
 test_transform <- function(img) {
-  img
+  img <- img %>%
+    torchvision::transform_to_tensor() %>%
+    (function(x) x$to(device = DEVICE)) %>%
+    torchvision::transform_resize(size = c(224, 224)) %>%
+    torchvision::transform_normalize(
+      mean = c(0.485, 0.456, 0.406), 
+      std = c(0.229, 0.224, 0.225)
+    )
+  img[..,1:224,1:224]
 }
 ```
 
@@ -65,7 +75,11 @@ test_transform <- function(img) {
 
 ```{r}
 train <- image_folder_dataset(IMG_TRAIN_FOLDER, train_transform, loader = magick_loader)
-test <- image_folder_dataset(IMG_TEST_FOLDER, test_transform, loader = magick_loader)
+test <- image_folder_dataset(IMG_TRAIN_FOLDER, test_transform, loader = magick_loader)
+
+train_idx <- sample.int(length(train), 14000)
+train <- torch::dataset_subset(train, train_idx)
+test <- torch::dataset_subset(test, setdiff(1:length(train), train_idx))
 ```
 
 ```{r}
@@ -132,5 +146,24 @@ for(epoch in 1:num_epochs) {
   
   model$eval()
 }
+```
+## Evalutaion
+
+```{r}
+eval <- data.frame(output = NULL, target = NULL)
+coro::loop(for(b in test_dl) {
+  output <- torch_argmax(model(b[[1]]$to(device = DEVICE)), 2)
+  target <- b[[2]]$to(device = DEVICE)
+  
+  eval_batch <- data.frame(
+    output = names(train$dataset$class_to_idx[as_array(output$to(device = "cpu"))]),
+    target = names(train$dataset$class_to_idx[as_array(target$to(device = "cpu"))])  
+  )
+  
+  eval <- rbind(eval, eval_batch)
+})
+
+eval %>% 
+  dplyr::filter(output == target)
 ```
 
