@@ -60,7 +60,6 @@ train_transform <- function(img) {
 test_transform <- function(img) {
   img <- img %>%
     torchvision::transform_to_tensor() %>%
-    (function(x) x$to(device = DEVICE)) %>%
     torchvision::transform_resize(size = c(224, 224)) %>%
     torchvision::transform_normalize(
       mean = c(0.485, 0.456, 0.406), 
@@ -110,7 +109,13 @@ print(model)
 ## Training loop
 
 ```{r}
-optimizer <- optim_sgd(model$parameters, lr = 0.05, momentum = 0.98)
+# model <- torch::torch_load("../inst/model")
+# model$parameters$resnet18.fc.bias$requires_grad_(TRUE)
+# model$parameters$resnet18.fc.weight$requires_grad_(TRUE)
+```
+
+```{r}
+optimizer <- optim_sgd(model$parameters, lr = 0.0005, momentum = 0.9)
 scheduler <- lr_one_cycle(
   optimizer, 
   max_lr = 0.05, 
@@ -148,7 +153,7 @@ for(epoch in 1:num_epochs) {
 ```
 
 ```{r}
-torch_save(model, "model")
+torch_save(model, "../inst/model")
 ```
 
 ## Evalutaion
@@ -169,5 +174,19 @@ coro::loop(for(b in test_dl) {
 
 eval %>% 
   dplyr::filter(output == target)
+library(dplyr)
+library(alluvial)
+x <-  eval %>%
+  mutate(correct = output == target) %>%
+  count(output, target, correct)
+
+alluvial(
+  x %>% select(target, output),
+  freq = x$n,
+  col = ifelse(x$correct, "lightblue", "red"),
+  border = ifelse(x$correct, "lightblue", "red"),
+  alpha = 0.6,
+  hide = x$n < 10
+)
 ```
 
