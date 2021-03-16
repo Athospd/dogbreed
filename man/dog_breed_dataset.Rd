@@ -9,7 +9,8 @@ dog_breed_dataset(
   split = "train",
   transform = NULL,
   download = FALSE,
-  loader = torchvision::base_loader
+  loader = torchvision::base_loader,
+  force = FALSE
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ dog_breed_dataset(
 \item{download}{wether to download or not.}
 
 \item{loader}{function. first argument is path for image. See \link[torchvision:base_loader]{torchvision::base_loader}.}
+
+\item{force}{force download?}
 }
 \description{
 Prepares the Dog Breed dataset available in Kaggle \href{https://www.kaggle.com/c/dog-breed-identification}{here}

@@ -8,6 +8,7 @@
 #' @param split string. 'train' or 'submission'.
 #' @param transform function that receives a torch tensor and return another torch tensor, transformed.
 #' @param download wether to download or not.
+#' @param force force download?
 #' @param loader function. first argument is path for image. See [torchvision::base_loader].
 #'
 #' @export
@@ -43,7 +44,7 @@ dog_breed_dataset <- torch::dataset(
               "french_bulldog", "bouvier_des_flandres", "tibetan_mastiff",
               "english_springer", "cocker_spaniel", "rottweiler"),
 
-  initialize = function(root, split = "train", transform = NULL, download = FALSE, loader = torchvision::base_loader) {
+  initialize = function(root, split = "train", transform = NULL, download = FALSE, loader = torchvision::base_loader, force = FALSE) {
 
     self$transform <- transform
     self$loader <- loader
@@ -52,8 +53,10 @@ dog_breed_dataset <- torch::dataset(
     # donwload ----------------------------------------------------------
     competition <- "dog-breed-identification"
     data_path <- normalizePath(fs::path(root, competition))
+    if(fs::dir_exists(data_path) && force)
+      fs::dir_delete(data_path)
     if (!fs::dir_exists(data_path) && download) {
-      zipfile <- glue::glue("{root}/{competition}.zip")
+      zipfile <- fs::path(root, paste0(competition, ".zip"))
 
       system(glue::glue("kaggle competitions download -c {competition} -p {root}"))
       unzip(zipfile, exdir = data_path)

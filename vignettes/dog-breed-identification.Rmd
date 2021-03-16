@@ -20,70 +20,80 @@ library(torchvision)
 library(dogbreed)
 
 device <- if(cuda_is_available()) "cuda" else "cpu"
+
+DATASET_FOLDER <- "~/datasets/"
+NUM_WORKERS <- 8
+BATCH_SIZE <- 16
+NUM_EPOCHS <- 20
 ```
 
 ## Dataset
 
 ```{r}
-transform_train <- function(img) {
-  # image to tensor
-  img %>% torchvision::transform_to_tensor() %>%
-    # move to the GPU (if available)
-    (function(x) x$to(device = device)) %>%
+train_transform <- function(img) {
+  img <- img %>%
+    # first convert image to tensor
+    torchvision::transform_to_tensor() %>%
+    # data augmentation
+    torchvision::transform_random_affine(15, shear = c(-10, 10)) %>%
+    # data augmentation
+    torchvision::transform_random_resized_crop(size = c(224, 224)) %>%
     # data augmentation
     torchvision::transform_color_jitter() %>%
+    # data augmentation
     torchvision::transform_random_horizontal_flip() %>%
-    torchvision::transform_resize(c(224, 224)) %>%
     # normalize according to what is expected by resnet
     torchvision::transform_normalize(
-      mean = c(0.485, 0.456, 0.406), 
+      mean = c(0.485, 0.456, 0.406),
       std = c(0.229, 0.224, 0.225)
-    )
+    ) 
+  img[..,1:224,1:224]
 }
 
-transform_submission <- function(img) {
-  img %>%
+submission_transform <- function(img) {
+  img <- img %>%
     torchvision::transform_to_tensor() %>%
-    (function(x) x$to(device = device)) %>%
-    torchvision::transform_resize(c(256, 256)) %>%
-    torchvision::transform_center_crop(c(224, 224))  %>%
+    torchvision::transform_resize(size = c(224, 224)) %>%
     torchvision::transform_normalize(
       mean = c(0.485, 0.456, 0.406), 
       std = c(0.229, 0.224, 0.225)
     )
+  img[..,1:224,1:224]
 }
 
 train <- dog_breed_dataset(
-  root = "/media/athos/DATA/OneDrive/Documents/datasets/", 
+  root = DATASET_FOLDER, 
   download = TRUE,
+  force = FALSE,
   split = "train", 
   loader = magick_loader, 
-  transform = transform_train
+  transform = train_transform
 )
 
 submission <- dog_breed_dataset(
-  root = "/media/athos/DATA/OneDrive/Documents/datasets/", 
+  root = DATASET_FOLDER, 
   download = TRUE,
+  force = FALSE,
   split = "submission", 
   loader = base_loader, 
-  transform = transform_submission
+  transform = submission_transform
 )
 ```
 
 ```{r}
 train_dl <- dataloader(
   dataset = train, 
-  batch_size = 32, 
-  shuffle = FALSE,
-  num_workers = 0,
+  batch_size = BATCH_SIZE, 
+  shuffle = TRUE,
+  num_workers = NUM_WORKERS,
   worker_globals = c("device")
 )
 
 submission_dl <- dataloader(
   dataset = submission, 
-  batch_size = 32, 
+  batch_size = BATCH_SIZE, 
   shuffle = FALSE,
-  num_workers = 4,
+  num_workers = NUM_WORKERS,
   worker_globals = c("device")
 )
 ```
@@ -125,7 +135,7 @@ set_progress_bar <- function(total) {
   )
 }
 
-n_epochs <- 10
+n_epochs <- NUM_EPOCHS
 loss_function <- nn_cross_entropy_loss()
 optimizer <- optim_sgd(model$parameters, lr = 0.1, momentum = 0.9)
 scheduler <- lr_one_cycle(optimizer, max_lr = 0.05, epochs = n_epochs, steps_per_epoch = train_dl$.length())
